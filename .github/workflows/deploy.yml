@@ -1,0 +1,41 @@
+name: CI/CD Deploy to AWS EC2
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  lint-and-test:
+    name: Validate Terraform & Test Docker Build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Check Terraform Formatting
+        run: terraform fmt -check -recursive
+
+      - name: Test Build Docker Image
+        run: docker build -t demo-app:test ./app
+
+  deploy:
+    name: Deploy Container to EC2
+    needs: lint-and-test
+    runs-on: ubuntu-latest
+    steps:
+      - name: SSH and Redeploy Docker Container
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ubuntu
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd ~/cloud-infrastructure-automation-pipeline
+            git pull origin main
+            docker build -t demo-app:v1 ./app
+            docker stop web-app || true
+            docker rm web-app || true
+            docker run -d --name web-app --restart always -p 80:80 demo-app:v1
